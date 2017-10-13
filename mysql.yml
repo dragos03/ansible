@@ -53,4 +53,8 @@
     - name: stergere baza de date de test
       mysql_db: name=test state=absent
       notify:
-        - Restart MySQL
+        - restart mysql
+        
+  handlers:
+    - name: restart mysql
+      service: name=mysql status=restart
