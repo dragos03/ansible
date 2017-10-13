@@ -1,15 +1,22 @@
-#Ansible playbook that installs MySQL 5.7 on a server running Ubuntu 16.04
+#Ansible playbook that installs php, MySQL 5.7, nginx and Wordpress on a server running Ubuntu 16.04
 
 ---
 
 - hosts: ubuntu
+
   vars:
-    mysql_root_pass: <mypassword>
+    mysql_root_pass: <your_password>
+    
   tasks:
   
     - name: Verificare conexiune
       ping:
-  
+      
+    - name: instalarea utilitarelor necesare
+      apt: name={{item}} state=installed
+      with_items:
+        - unzip
+        
     - name: Instalare php
       apt: name={{item}} state=installed
       with_items:
@@ -17,10 +24,10 @@
         - php-fpm
         - php-mysql
         - php-xml
-    
+        
     - name: Dezinstalare Apache
       apt: name=apache2 state=removed
-    
+      
     - name: Instalare mysql
       apt: name={{item}} state=installed update_cache=yes
       with_items:
@@ -28,7 +35,7 @@
         - mysql-client
         - python-mysqldb
         - libmysqlclient-dev
-    
+        
     - name: Schimbarea parolei de root mysql pentru toate conturile
       mysql_user:
         name: root
@@ -54,7 +61,55 @@
       mysql_db: name=test state=absent
       notify:
         - restart mysql
-        
+
+    - name: Instalare nginx
+      apt: name=nginx state=installed
+
+    - name: Pornire nginx
+      service: name=nginx state=started
+
+    - name: Copiere fisier configurare nginx
+      template: src=templates/nginx/default dest=/etc/nginx/sites-available/default
+      notify: restart nginx
+    
+    - name: copiere wordpress
+      copy: src=provisioning/files/wordpress.zip dest=/tmp/wordpress.zip
+
+    - name: dezarhivare wp
+      unarchive: src=/tmp/wordpress.zip dest=/tmp copy=no creates=/tmp/wordpress/wp-settings.php
+
+    - name: creare director
+      file: dest=/var/www/book.example.com state=directory
+
+    - name: copiere fisiere
+      command: cp -a /tmp/wordpress/. /var/www/book.example.com creates=/var/www/book.example.com/wp-settings.php
+
+    - name: creare baza de date
+      mysql_db: name=wordpress state=present
+
+    - name: configurare baza de date
+      mysql_user: name=wordpress host=localhost password=baluba priv=wordpress.*:ALL
+
+    - name: copiere wpconfig
+      template: src=templates/wordpress/wp-config.php dest=/var/www/book.example.com/wp-config.php
+
+    - name: testare daca baza de date exista
+      command: mysql -u root wordpress -e "SELECT ID FROM wordpress.wp_users LIMIT 1;"
+      register: db_exist
+      ignore_errors: true
+      changed_when: false
+
+    - name: copiere baza de date
+      copy: src=/var/www/wp-database-sql dest=/tmp/wp-database.sql
+      when: db_exist.rc > 0
+
+    - name: importarea bazei de date
+      mysql_db: target=/tmp/wp-database.sql state=import name=wordpress
+      when: db_exist.rc > 0
+
   handlers:
+    - name: restart nginx
+      service: name=nginx state=restarted
+
     - name: restart mysql
-      service: name=mysql status=restart
+      service: name=mysql state=restarted
