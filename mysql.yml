@@ -1,0 +1,56 @@
+#Ansible playbook that installs MySQL 5.7 on a server running Ubuntu 16.04
+
+---
+
+- hosts: ubuntu
+  vars:
+    mysql_root_pass: <mypassword>
+  tasks:
+  
+    - name: Verificare conexiune
+      ping:
+  
+    - name: Instalare php
+      apt: name={{item}} state=installed
+      with_items:
+        - php
+        - php-fpm
+        - php-mysql
+        - php-xml
+    
+    - name: Dezinstalare Apache
+      apt: name=apache2 state=removed
+    
+    - name: Instalare mysql
+      apt: name={{item}} state=installed update_cache=yes
+      with_items:
+        - mysql-server
+        - mysql-client
+        - python-mysqldb
+        - libmysqlclient-dev
+    
+    - name: Schimbarea parolei de root mysql pentru toate conturile
+      mysql_user:
+        name: root
+        host: "{{ item }}"
+        password: "{{ mysql_root_pass }}"
+        state: present
+      with_items:
+        - "{{ ansible_hostname }}"
+        - 127.0.0.1
+        - ::1
+        - localhost
+
+    - name: copierea credentialelor de root
+      template: src=root.cnf.j2 dest=~/.my.cnf mode=0600
+
+    - name: stergere useri anonimi
+      mysql_user: name='' host={{ item }} state=absent
+      with_items:
+        - localhost
+        - "{{ ansible_hostname }}"
+
+    - name: stergere baza de date de test
+      mysql_db: name=test state=absent
+      notify:
+        - Restart MySQL
